@@ -35,8 +35,8 @@ rain_model = RandomForestClassifier(n_estimators=100, random_state=42)
 rain_model.fit(X_rain, y_rain)
 
 # ====== Streamlit UI ======
-st.title("🌦 Weather & Rain Prediction App (Hackathon Edition)")
-st.write("Enter your location to get today's weather and tomorrow's prediction!")
+st.title("🌦 Weather, Rain & Air Quality App (Hackathon Edition)")
+st.write("Enter your location to get today's weather, air quality, and tomorrow's prediction!")
 
 # ====== User Location Input ======
 location = st.text_input("Enter your city:", "Kolkata")
@@ -52,6 +52,8 @@ if location:
             today_temp = response["main"]["temp"]
             today_humidity = response["main"]["humidity"]
             today_wind = response["wind"]["speed"]
+            lat = response["coord"]["lat"]
+            lon = response["coord"]["lon"]
 
             st.subheader(f"📍 Weather in {location} Today")
             st.write(f"🌡 Temperature: {today_temp}°C")
@@ -64,6 +66,27 @@ if location:
                 desc = response["weather"][0]["description"].title()
                 icon_url = f"http://openweathermap.org/img/wn/{icon_code}@2x.png"
                 st.image(icon_url, caption=desc)
+
+            # ====== Air Quality Data (from OpenWeatherMap Air Pollution API) ======
+            aqi_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={api_key}"
+            aqi_response = requests.get(aqi_url).json()
+
+            if "list" in aqi_response:
+                aqi = aqi_response["list"][0]["main"]["aqi"]
+                components = aqi_response["list"][0]["components"]
+
+                aqi_levels = {
+                    1: "Good 😀",
+                    2: "Fair 🙂",
+                    3: "Moderate 😐",
+                    4: "Poor 😷",
+                    5: "Very Poor 🤢"
+                }
+
+                st.subheader("🌍 Air Quality Index")
+                st.write(f"**AQI Level:** {aqi} ({aqi_levels.get(aqi, 'Unknown')})")
+                st.write("🔹 Pollutants (µg/m³):")
+                st.write(f"PM2.5: {components['pm2_5']}, PM10: {components['pm10']}, NO₂: {components['no2']}, CO: {components['co']}")
 
             # ====== Predict Tomorrow ======
             today_day = pd.Timestamp.now().day
