@@ -124,7 +124,7 @@ if submitted:
             st.info(f"🌡 Temp: {today_temp}°C | 💧 Humidity: {today_humidity}% | 🌬 Wind: {today_wind} km/h")
             st.success(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
             st.progress(int(rain_prob))
-            st.caption(f"🌧 Rain Probability Tomorrow: {rain_prob}%")
+            st.caption(f"🌧 Rain Probability: {rain_prob}%")
 
         # Tomorrow (ML)
         tomorrow_day = pd.Timestamp.now().day + 1
@@ -201,6 +201,7 @@ if submitted:
 
 
            
+
 
 
 
