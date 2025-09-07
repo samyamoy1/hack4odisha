@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 import datetime
 
 # ----------------------------
-# Generate synthetic historical data
+# Generate synthetic historical data for ML model
 # ----------------------------
 np.random.seed(42)
 days = 30
@@ -95,11 +95,6 @@ def activity_advice(temp, rain_mm, aqi_value, activity):
         advice.append("✅ Weather looks good for your activity!")
     return " ".join(advice)
 
-def rain_probability(df):
-    rain_hours = df[df['rain_mm'] > 0].shape[0]
-    total_hours = df.shape[0]
-    return round((rain_hours/total_hours)*100, 1)
-
 def fetch_weather(city, api_key):
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     return requests.get(url).json()
@@ -113,20 +108,34 @@ def fetch_air_quality(lat, lon, api_key):
         return mapping.get(aqi_code,0)
     return None
 
+def fetch_rain_probability(city, api_key):
+    """Use forecast API to calculate rain probability for tomorrow"""
+    url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={api_key}&units=metric"
+    data = requests.get(url).json()
+    if "list" not in data:
+        return 0
+    tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+    forecast_list = [item for item in data["list"] if datetime.datetime.fromtimestamp(item["dt"]).date() == tomorrow]
+    if not forecast_list:
+        return 0
+    rain_hours = sum(1 for item in forecast_list if "rain" in item and item["rain"].get("3h",0) > 0)
+    probability = round((rain_hours / len(forecast_list)) * 100, 1)
+    return probability
+
 # ----------------------------
 # Streamlit UI
 # ----------------------------
 st.set_page_config(page_title="Weather + AQI App", layout="wide")
 st.title("🌦 Weather + AQI + Activity Advisory")
 
-# Tier 1 and Tier 2 cities of India
 tier1_cities = ["Mumbai", "Delhi", "Bangalore", "Kolkata", "Chennai", "Hyderabad", "Pune", "Ahmedabad"]
 tier2_cities = ["Surat", "Jaipur", "Lucknow", "Kanpur", "Nagpur", "Indore", "Thane", "Bhopal", "Patna", "Vadodara"]
-all_cities = tier1_cities + tier2_cities
+tier1_cities_display = [f"⭐ {city}" for city in tier1_cities]
+all_cities_display = tier1_cities_display + tier2_cities
 
-# User inputs
 with st.form("weather_form"):
-    city = st.selectbox("Select your city:", all_cities)
+    city_selected = st.selectbox("Select your city:", all_cities_display)
+    city = city_selected.replace("⭐ ", "")
     activity = st.selectbox("Select your planned activity:", ["None","Jogging","Cycling","Walking","Outdoor Work","Picnic"])
     submitted = st.form_submit_button("Get Forecast & Advice")
 
@@ -143,24 +152,35 @@ if submitted:
         aqi_value = fetch_air_quality(lat, lon, api_key)
         category, badge = get_air_quality_category(aqi_value)
 
-        # Display today's weather
-        st.subheader(f"📍 Weather in {city} Today")
-        st.write(f"🌡 Temperature: {today_temp}°C")
-        st.write(f"💧 Humidity: {today_humidity}%")
-        st.write(f"🌬 Wind: {today_wind} km/h")
-        st.write(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
+        # Rain probability for tomorrow
+        rain_prob = fetch_rain_probability(city, api_key)
 
-        # AQI Legend
-        st.subheader("📝 AQI Legend")
-        aqi_legend = {
-            "Good": "🟢 Green (0-50)",
-            "Moderate": "🟡 Yellow (51-100)",
-            "Unhealthy for Sensitive Groups": "🟠 Orange (101-150)",
-            "Unhealthy": "🔴 Red (151-200)",
-            "Very Unhealthy": "🟣 Purple (201-300)",
-            "Hazardous": "⚫ Black (301+)"
-        }
-        st.table(pd.DataFrame(list(aqi_legend.items()), columns=["Category","Indicator"]))
+        # Display today's weather and AQI legend
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.subheader(f"📍 Weather in {city} Today")
+            st.write(f"🌡 Temperature: {today_temp}°C")
+            st.write(f"💧 Humidity: {today_humidity}%")
+            st.write(f"🌬 Wind: {today_wind} km/h")
+            st.write(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
+            st.write(f"🌧 Tomorrow Rain Probability: {rain_prob}%")
+
+        with col2:
+            st.subheader("📝 AQI Info")
+            aqi_legend = {
+                "Good": "🟢 0-50",
+                "Moderate": "🟡 51-100",
+                "Unhealthy for Sensitive Groups": "🟠 101-150",
+                "Unhealthy": "🔴 151-200",
+                "Very Unhealthy": "🟣 201-300",
+                "Hazardous": "⚫ 301+"
+            }
+            for key, val in aqi_legend.items():
+                st.markdown(f"<span style='display:block; margin:2px 0; font-size:14px;'>{val}</span>", unsafe_allow_html=True)
+
+        # Separator between today and tomorrow
+        st.markdown("---")
 
         # Predict tomorrow
         tomorrow_day = pd.Timestamp.now().day + 1
@@ -174,7 +194,6 @@ if submitted:
         predicted_aqi_value = [80,150,250][predicted_aqi_cat]
         pred_category, pred_badge = get_air_quality_category(predicted_aqi_value)
 
-        # Tomorrow's forecast
         st.subheader("📅 Tomorrow's Forecast (ML)")
         st.write(f"🌡 Predicted Temperature: {predicted_temp:.2f}°C")
         st.write(f"🌍 Predicted AQI: {pred_badge} {pred_category} — {predicted_aqi_value}/500")
@@ -185,14 +204,11 @@ if submitted:
         st.subheader("💡 Activity Advisory for Tomorrow")
         st.info(advice_text)
 
-        # Rain probability
-        prob = rain_probability(df)
-        st.write(f"🌧 Historical Rain Probability: {prob}%")
-
     else:
         st.error("❌ Could not fetch weather data. Check your API key or city name.")
 
 
            
+
 
 
