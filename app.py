@@ -2,10 +2,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pandas as pd
-import numpy as np
 import requests
 import streamlit as st
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestClassifier
 
@@ -18,7 +16,7 @@ data = {
     "humidity": [80, 78, 83, 88, 85, 80, 82],
     "wind": [10, 11, 9, 14, 8, 12, 10],
     "rain_mm": [1.2, 0.0, 0.0, 6.5, 4.0, 2.0, 5.0],
-    "aqi": [60, 75, 90, 140, 120, 80, 100]  # sample AQI values
+    "aqi": [60, 75, 90, 140, 120, 80, 100]
 }
 df = pd.DataFrame(data)
 
@@ -30,7 +28,7 @@ temp_model.fit(X_temp, y_temp)
 
 # Train AQI classification model
 df["aqi_category"] = df["aqi"].apply(
-    lambda x: 0 if x <= 100 else (1 if x <= 200 else 2)  # 0=Good/Moderate, 1=Unhealthy, 2=Very Unhealthy
+    lambda x: 0 if x <= 100 else (1 if x <= 200 else 2)
 )
 X_aqi = df[["temp", "humidity", "wind"]]
 y_aqi = df["aqi_category"]
@@ -42,17 +40,17 @@ aqi_model.fit(X_aqi, y_aqi)
 # ---------------------------
 def get_air_quality_category(aqi_value):
     if aqi_value <= 50:
-        return "Good", "🟢"
+        return "Good", "🟢 Green"
     elif aqi_value <= 100:
-        return "Moderate", "🟡"
+        return "Moderate", "🟡 Yellow"
     elif aqi_value <= 150:
-        return "Unhealthy for Sensitive Groups", "🟠"
+        return "Unhealthy for Sensitive Groups", "🟠 Orange"
     elif aqi_value <= 200:
-        return "Unhealthy", "🔴"
+        return "Unhealthy", "🔴 Red"
     elif aqi_value <= 300:
-        return "Very Unhealthy", "🟣"
+        return "Very Unhealthy", "🟣 Purple"
     else:
-        return "Hazardous", "⚫"
+        return "Hazardous", "⚫ Black"
 
 def fetch_weather(city, api_key):
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
@@ -70,10 +68,10 @@ def fetch_air_quality(lat, lon, api_key):
 # ---------------------------
 # Streamlit UI
 # ---------------------------
-st.title("🌦 Weather + AQI ML Forecast App (Hackathon Edition)")
+st.title("🌦 Weather + AQI Forecast App ")
 
 city = st.text_input("Enter your city:", "Kolkata")
-api_key = "332c7aeda1d896aa5c4ce26b89c28096"  # 🔑 replace with your OpenWeatherMap API key
+api_key = "332c7aeda1d896aa5c4ce26b89c28096"  # replace with your OpenWeatherMap API key
 
 if city:
     try:
@@ -93,10 +91,25 @@ if city:
             # Get today's AQI
             aqi_value = fetch_air_quality(lat, lon, api_key)
             if aqi_value is not None:
-                category, emoji = get_air_quality_category(aqi_value)
+                category, color = get_air_quality_category(aqi_value)
                 st.subheader("🌍 Air Quality Today")
-                st.write(f"**Status:** {category} {emoji}")
+                st.write(f"**Status:** {category} ({color})")
                 st.write(f"**AQI Value:** {aqi_value}/500")
+
+                # ---------------------------
+                # AQI Legend Table
+                # ---------------------------
+                st.subheader("📝 AQI Legend")
+                aqi_legend = {
+                    "Good": "🟢 Green (0-50)",
+                    "Moderate": "🟡 Yellow (51-100)",
+                    "Unhealthy for Sensitive Groups": "🟠 Orange (101-150)",
+                    "Unhealthy": "🔴 Red (151-200)",
+                    "Very Unhealthy": "🟣 Purple (201-300)",
+                    "Hazardous": "⚫ Black (301+)"
+                }
+                legend_df = pd.DataFrame(list(aqi_legend.items()), columns=["Category", "Indicator"])
+                st.table(legend_df)
 
                 # ---------------------------
                 # Tomorrow Prediction (ML)
@@ -118,34 +131,14 @@ if city:
                 predicted_aqi_cat = aqi_model.predict(aqi_features)[0]
                 predicted_aqi_value = [80, 150, 250][predicted_aqi_cat]
 
-                pred_category, pred_emoji = get_air_quality_category(predicted_aqi_value)
+                pred_category, pred_color = get_air_quality_category(predicted_aqi_value)
 
                 st.subheader("📅 Tomorrow's Forecast (ML)")
                 st.write(f"🌡 Predicted Temperature: {predicted_temp:.2f}°C")
-                st.write(f"🌍 Predicted AQI: {pred_category} {pred_emoji} ({predicted_aqi_value}/500)")
-
-                # ---------------------------
-                # AQI Visualization
-                # ---------------------------
-                fig, ax = plt.subplots(figsize=(6, 1.2))
-                cmap = plt.cm.get_cmap("RdYlGn_r")
-                gradient = np.linspace(0, 1, 500).reshape(1, -1)
-                ax.imshow(gradient, aspect="auto", cmap=cmap, extent=[0, 500, 0, 1])
-
-                # Markers
-                ax.axvline(aqi_value, color="black", linestyle="--", linewidth=2, label="Today")
-                ax.axvline(predicted_aqi_value, color="blue", linestyle="--", linewidth=2, label="Tomorrow")
-
-                ax.set_xlim(0, 500)
-                ax.set_yticks([])
-                ax.set_xlabel("Air Quality Index (0 = Good, 500 = Hazardous)")
-                ax.legend()
-
-                st.pyplot(fig)
+                st.write(f"🌍 Predicted AQI: {pred_category} ({pred_color}) — {predicted_aqi_value}/500")
 
         else:
             st.error("❌ Could not fetch weather data. Check the city name.")
     except Exception as e:
         st.error(f"Error: {e}")
-
 
