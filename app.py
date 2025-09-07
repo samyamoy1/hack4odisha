@@ -10,12 +10,9 @@ from sklearn.ensemble import RandomForestClassifier
 import datetime
 import altair as alt
 
-# ----------------------------
-# Synthetic historical data for ML
-# ----------------------------
+# -------------------- Generate synthetic data --------------------
 np.random.seed(42)
-days = 30
-hours_per_day = 24
+days, hours_per_day = 30, 24
 total_rows = days * hours_per_day
 
 dates = [datetime.datetime.now() - datetime.timedelta(days=i//24, hours=i%24) for i in range(total_rows)]
@@ -32,24 +29,26 @@ for t, h, w, r in zip(temp, humidity, wind, rain_mm):
     noise = np.random.normal(0,10)
     aqi.append(min(max(int(base+noise),10),300))
 
-df = pd.DataFrame({"date": dates, "temp": temp.round(1), "humidity": humidity.round(1),
-                   "wind": wind.round(1), "rain_mm": rain_mm, "aqi": aqi})
+df = pd.DataFrame({
+    "date": dates,
+    "temp": temp.round(1),
+    "humidity": humidity.round(1),
+    "wind": wind.round(1),
+    "rain_mm": rain_mm,
+    "aqi": aqi
+})
 df['day'] = pd.to_datetime(df['date']).dt.day
 df['aqi_category'] = df['aqi'].apply(lambda x: 0 if x <= 100 else (1 if x <= 200 else 2))
 
-# ----------------------------
-# ML models
-# ----------------------------
+# -------------------- Train ML models --------------------
 temp_model = LinearRegression()
 temp_model.fit(df[['day','humidity','wind','rain_mm']], df['temp'])
 
 aqi_model = RandomForestClassifier(n_estimators=200, random_state=42)
 aqi_model.fit(df[['temp','humidity','wind']], df['aqi_category'])
 
-# ----------------------------
-# Helper functions
-# ----------------------------
-def get_air_quality_category(aqi_value: int) -> tuple:
+# -------------------- Helper functions --------------------
+def get_air_quality_category(aqi_value):
     if aqi_value <= 50: return "Good", "🟢"
     elif aqi_value <= 100: return "Moderate", "🟡"
     elif aqi_value <= 150: return "Unhealthy for Sensitive Groups", "🟠"
@@ -57,7 +56,7 @@ def get_air_quality_category(aqi_value: int) -> tuple:
     elif aqi_value <= 300: return "Very Unhealthy", "🟣"
     else: return "Hazardous", "⚫"
 
-def activity_advice(temp: float, rain_mm: float, aqi_value: int, activity: str) -> str:
+def activity_advice(temp, rain_mm, aqi_value, activity):
     advice = []
     if activity != "None":
         if rain_mm>1: advice.append("🌂 Carry umbrella, might rain.")
@@ -71,11 +70,11 @@ def activity_advice(temp: float, rain_mm: float, aqi_value: int, activity: str) 
     return " ".join(advice)
 
 @st.cache_data(ttl=600)
-def fetch_weather(city: str, api_key: str) -> dict:
+def fetch_weather(city, api_key):
     return requests.get(f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric").json()
 
 @st.cache_data(ttl=600)
-def fetch_air_quality(lat: float, lon: float, api_key: str) -> int:
+def fetch_air_quality(lat, lon, api_key):
     data = requests.get(f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={api_key}").json()
     if "list" in data and data["list"]:
         mapping = {1:30,2:80,3:120,4:180,5:300}
@@ -83,23 +82,21 @@ def fetch_air_quality(lat: float, lon: float, api_key: str) -> int:
     return 0
 
 @st.cache_data(ttl=600)
-def fetch_rain_probability(city: str, api_key: str) -> float:
+def fetch_rain_probability(city, api_key):
     data = requests.get(f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={api_key}&units=metric").json()
     tomorrow = datetime.date.today() + datetime.timedelta(days=1)
-    forecast_list = [item for item in data.get("list",[]) if datetime.datetime.fromtimestamp(item["dt"]).date()==tomorrow]
+    forecast_list = [item for item in data.get("list",[]) if datetime.datetime.fromtimestamp(item["dt"]).date() == tomorrow]
     if not forecast_list: return 0
     rain_hours = sum(1 for item in forecast_list if "rain" in item and item["rain"].get("3h",0)>0)
     return round((rain_hours/len(forecast_list))*100,1)
 
-# ----------------------------
-# Streamlit UI
-# ----------------------------
+# -------------------- Streamlit UI --------------------
 st.set_page_config(page_title="Weather + AQI App", layout="wide")
 st.title("🌦 Weather + AQI + Activity Advisory")
 
 tier1_cities = ["Mumbai","Delhi","Bangalore","Kolkata","Chennai","Hyderabad","Pune","Ahmedabad"]
 tier2_cities = ["Surat","Jaipur","Lucknow","Kanpur","Nagpur","Indore","Thane","Bhopal","Patna","Vadodara"]
-all_cities_display = [f"⭐ {c}" for c in tier1_cities]+tier2_cities
+all_cities_display = [f"⭐ {c}" for c in tier1_cities] + tier2_cities
 
 with st.form("weather_form"):
     city_selected = st.selectbox("Select your city:", all_cities_display)
@@ -110,6 +107,7 @@ with st.form("weather_form"):
 if submitted:
     api_key = "332c7aeda1d896aa5c4ce26b89c28096"
     weather_data = fetch_weather(city, api_key)
+
     if weather_data.get("main"):
         today_temp = weather_data["main"]["temp"]
         today_humidity = weather_data["main"]["humidity"]
@@ -121,14 +119,14 @@ if submitted:
 
         tab1, tab2, tab3 = st.tabs(["📍 Today", "📅 Tomorrow (ML)", "📈 5-Day Forecast"])
 
-        # Today tab
+        # Today
         with tab1:
             st.info(f"🌡 Temp: {today_temp}°C | 💧 Humidity: {today_humidity}% | 🌬 Wind: {today_wind} km/h")
             st.success(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
             st.progress(int(rain_prob))
             st.caption(f"🌧 Rain Probability Tomorrow: {rain_prob}%")
 
-        # Tomorrow tab
+        # Tomorrow (ML)
         tomorrow_day = pd.Timestamp.now().day + 1
         predicted_rain_mm = df['rain_mm'].mean()
         tomorrow_features = pd.DataFrame([[tomorrow_day,today_humidity,today_wind,predicted_rain_mm]], columns=['day','humidity','wind','rain_mm'])
@@ -142,30 +140,31 @@ if submitted:
             st.info(f"🌡 Predicted Temp: {predicted_temp:.2f}°C")
             st.success(f"🌍 Predicted AQI: {pred_badge} {pred_category} — {predicted_aqi_value}/500")
             st.warning(f"🌧 Predicted Rain (mm): {predicted_rain_mm:.1f}")
-            with st.expander("💡 Activity Advisory"):
-                st.info(activity_advice(predicted_temp, predicted_rain_mm, predicted_aqi_value, activity))
+            st.info(activity_advice(predicted_temp, predicted_rain_mm, predicted_aqi_value, activity))
 
-        # 5-Day Forecast tab
+        # 5-Day Forecast
         forecast_days = 5
-        forecast_dates = [datetime.date.today() + datetime.timedelta(days=i) for i in range(1,forecast_days+1)]
+        forecast_dates = [datetime.date.today() + datetime.timedelta(days=i) for i in range(1, forecast_days+1)]
         forecast_temps, forecast_aqi = [], []
 
-        for d in forecast_dates:
-            features = pd.DataFrame([[d.day,today_humidity,today_wind,predicted_rain_mm]],
-                                    columns=['day','humidity','wind','rain_mm'])
-            temp_pred = temp_model.predict(features)[0]
-            # Add small noise for dynamic line
-            temp_pred += np.random.normal(0, 1)  # ±1°C variation
+        temp_trend = np.linspace(0, np.random.uniform(-2,2), forecast_days)
+        aqi_trend = np.linspace(0, np.random.randint(-15,15), forecast_days)
+
+        for i, d in enumerate(forecast_dates):
+            hum = today_humidity + np.random.normal(0, 2)
+            w = today_wind + np.random.normal(0, 1)
+            rain = predicted_rain_mm + np.random.normal(0, 0.5)
+
+            features = pd.DataFrame([[d.day, hum, w, rain]], columns=['day','humidity','wind','rain_mm'])
+            temp_pred = temp_model.predict(features)[0] + np.random.normal(0,1) + temp_trend[i]
             forecast_temps.append(temp_pred)
 
-            aqi_cat = aqi_model.predict(pd.DataFrame([[forecast_temps[-1],today_humidity,today_wind]],
-                                                     columns=['temp','humidity','wind']))[0]
-            # Add small random AQI variation
-            forecast_aqi.append([80,150,250][aqi_cat] + np.random.randint(-10,10))
+            aqi_cat = aqi_model.predict(pd.DataFrame([[temp_pred, hum, w]], columns=['temp','humidity','wind']))[0]
+            aqi_pred = [80,150,250][aqi_cat] + np.random.randint(-10,10) + aqi_trend[i]
+            forecast_aqi.append(max(0, aqi_pred))
 
-        forecast_df = pd.DataFrame({"Date":forecast_dates, "Temp":forecast_temps, "AQI":forecast_aqi})
+        forecast_df = pd.DataFrame({"Date": forecast_dates, "Temp": forecast_temps, "AQI": forecast_aqi})
 
-        # Map AQI to category & color
         def map_aqi_category(value):
             if value <= 50: return "Good", "#00ff00"
             elif value <= 100: return "Moderate", "#ffff00"
@@ -178,39 +177,31 @@ if submitted:
         forecast_df['AQI_Color'] = forecast_df['AQI'].apply(lambda x: map_aqi_category(x)[1])
 
         with tab3:
-            st.markdown("### 🌡 Temperature & 🌍 AQI 5-Day Forecast")
             col_temp, col_aqi = st.columns(2)
-
-            # Temperature chart
             with col_temp:
                 st.markdown("#### Temperature Forecast (°C)")
                 temp_chart = alt.Chart(forecast_df).mark_line(point=True, interpolate='monotone').encode(
-                    x=alt.X('Date:T', title='Date'),
-                    y=alt.Y('Temp:Q', title='Temperature (°C)'),
-                    tooltip=['Date','Temp']
+                    x=alt.X('Date:T'), y=alt.Y('Temp:Q'), tooltip=['Date','Temp']
                 ).interactive()
                 st.altair_chart(temp_chart, use_container_width=True)
 
-            # AQI chart
             with col_aqi:
                 st.markdown("#### AQI Forecast")
                 aqi_chart = alt.Chart(forecast_df).mark_bar().encode(
-                    x=alt.X('Date:T', title='Date'),
-                    y=alt.Y('AQI:Q', title='Air Quality Index'),
+                    x=alt.X('Date:T'), y=alt.Y('AQI:Q'),
                     color=alt.Color('AQI_Color:N', scale=None, legend=None),
                     tooltip=['Date','AQI','AQI_Category']
                 ).interactive()
                 st.altair_chart(aqi_chart, use_container_width=True)
 
             st.markdown("**AQI Legend:** 🟢 Good | 🟡 Moderate | 🟠 Unhealthy for Sensitive Groups | 🔴 Unhealthy | 🟣 Very Unhealthy | ⚫ Hazardous")
-
     else:
         st.error("❌ Could not fetch weather data. Check API key or city name.")
 
 
 
-
            
+
 
 
 
