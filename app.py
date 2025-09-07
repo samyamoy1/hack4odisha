@@ -60,7 +60,7 @@ aqi_model.fit(X_aqi, y_aqi)
 # ----------------------------
 # Helper Functions
 # ----------------------------
-def get_air_quality_category(aqi_value):
+def get_air_quality_category(aqi_value: int) -> tuple:
     if aqi_value <= 50:
         return "Good", "🟢"
     elif aqi_value <= 100:
@@ -74,7 +74,7 @@ def get_air_quality_category(aqi_value):
     else:
         return "Hazardous", "⚫"
 
-def activity_advice(temp, rain_mm, aqi_value, activity):
+def activity_advice(temp: float, rain_mm: float, aqi_value: int, activity: str) -> str:
     advice = []
     if activity == "None":
         return "No specific advice for now."
@@ -95,21 +95,23 @@ def activity_advice(temp, rain_mm, aqi_value, activity):
         advice.append("✅ Weather looks good for your activity!")
     return " ".join(advice)
 
-def fetch_weather(city, api_key):
+@st.cache_data(ttl=600)
+def fetch_weather(city: str, api_key: str) -> dict:
     url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     return requests.get(url).json()
 
-def fetch_air_quality(lat, lon, api_key):
+@st.cache_data(ttl=600)
+def fetch_air_quality(lat: float, lon: float, api_key: str) -> int:
     url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={api_key}"
     data = requests.get(url).json()
     if "list" in data and data["list"]:
         aqi_code = data["list"][0]["main"]["aqi"]
         mapping = {1:30,2:80,3:120,4:180,5:300}
         return mapping.get(aqi_code,0)
-    return None
+    return 0
 
-def fetch_rain_probability(city, api_key):
-    """Use forecast API to calculate rain probability for tomorrow"""
+@st.cache_data(ttl=600)
+def fetch_rain_probability(city: str, api_key: str) -> float:
     url = f"http://api.openweathermap.org/data/2.5/forecast?q={city}&appid={api_key}&units=metric"
     data = requests.get(url).json()
     if "list" not in data:
@@ -142,32 +144,28 @@ with st.form("weather_form"):
 if submitted:
     api_key = "332c7aeda1d896aa5c4ce26b89c28096"
     weather_data = fetch_weather(city, api_key)
+    
     if weather_data.get("main"):
         today_temp = weather_data["main"]["temp"]
         today_humidity = weather_data["main"]["humidity"]
         today_wind = weather_data["wind"]["speed"]
         lat, lon = weather_data["coord"]["lat"], weather_data["coord"]["lon"]
 
-        # Today's AQI
         aqi_value = fetch_air_quality(lat, lon, api_key)
         category, badge = get_air_quality_category(aqi_value)
 
-        # Rain probability for tomorrow
         rain_prob = fetch_rain_probability(city, api_key)
 
-        # Display today's weather and AQI legend
-        col1, col2 = st.columns([2, 1])
+        # Tabs for Today and Tomorrow
+        tab1, tab2 = st.tabs(["📍 Today's Weather", "📅 Tomorrow's Forecast (ML)"])
 
-        with col1:
-            st.subheader(f"📍 Weather in {city} Today")
-            st.write(f"🌡 Temperature: {today_temp}°C")
-            st.write(f"💧 Humidity: {today_humidity}%")
-            st.write(f"🌬 Wind: {today_wind} km/h")
-            st.write(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
-            st.write(f"🌧 Tomorrow Rain Probability: {rain_prob}%")
+        with tab1:
+            st.info(f"🌡 Temperature: {today_temp}°C  | 💧 Humidity: {today_humidity}%  | 🌬 Wind: {today_wind} km/h")
+            st.success(f"🌍 AQI: {badge} {category} — {aqi_value}/500")
+            st.progress(int(rain_prob))
+            st.caption(f"🌧 Rain Probability Tomorrow: {rain_prob}%")
 
-        with col2:
-            st.subheader("📝 AQI Info")
+            st.markdown("#### 📝 AQI Legend")
             aqi_legend = {
                 "Good": "🟢 0-50",
                 "Moderate": "🟡 51-100",
@@ -179,36 +177,32 @@ if submitted:
             for key, val in aqi_legend.items():
                 st.markdown(f"<span style='display:block; margin:2px 0; font-size:14px;'>{val}</span>", unsafe_allow_html=True)
 
-        # Separator between today and tomorrow
-        st.markdown("---")
+        with tab2:
+            tomorrow_day = pd.Timestamp.now().day + 1
+            predicted_rain_mm = df['rain_mm'].mean()
+            tomorrow_features = pd.DataFrame([[tomorrow_day, today_humidity, today_wind, predicted_rain_mm]],
+                                             columns=['day','humidity','wind','rain_mm'])
+            predicted_temp = temp_model.predict(tomorrow_features)[0]
 
-        # Predict tomorrow
-        tomorrow_day = pd.Timestamp.now().day + 1
-        predicted_rain_mm = df['rain_mm'].mean()
-        tomorrow_features = pd.DataFrame([[tomorrow_day, today_humidity, today_wind, predicted_rain_mm]],
-                                         columns=['day','humidity','wind','rain_mm'])
-        predicted_temp = temp_model.predict(tomorrow_features)[0]
+            aqi_features = pd.DataFrame([[predicted_temp, today_humidity, today_wind]], columns=['temp','humidity','wind'])
+            predicted_aqi_cat = aqi_model.predict(aqi_features)[0]
+            predicted_aqi_value = [80,150,250][predicted_aqi_cat]
+            pred_category, pred_badge = get_air_quality_category(predicted_aqi_value)
 
-        aqi_features = pd.DataFrame([[predicted_temp, today_humidity, today_wind]], columns=['temp','humidity','wind'])
-        predicted_aqi_cat = aqi_model.predict(aqi_features)[0]
-        predicted_aqi_value = [80,150,250][predicted_aqi_cat]
-        pred_category, pred_badge = get_air_quality_category(predicted_aqi_value)
+            st.info(f"🌡 Predicted Temperature: {predicted_temp:.2f}°C")
+            st.success(f"🌍 Predicted AQI: {pred_badge} {pred_category} — {predicted_aqi_value}/500")
+            st.warning(f"🌧 Predicted Rain (mm): {predicted_rain_mm:.1f}")
 
-        st.subheader("📅 Tomorrow's Forecast (ML)")
-        st.write(f"🌡 Predicted Temperature: {predicted_temp:.2f}°C")
-        st.write(f"🌍 Predicted AQI: {pred_badge} {pred_category} — {predicted_aqi_value}/500")
-        st.write(f"🌧 Predicted Rain (mm): {predicted_rain_mm:.1f}")
-
-        # Activity advisory
-        advice_text = activity_advice(predicted_temp, predicted_rain_mm, predicted_aqi_value, activity)
-        st.subheader("💡 Activity Advisory for Tomorrow")
-        st.info(advice_text)
+            with st.expander("💡 Activity Advisory for Tomorrow"):
+                advice_text = activity_advice(predicted_temp, predicted_rain_mm, predicted_aqi_value, activity)
+                st.info(advice_text)
 
     else:
         st.error("❌ Could not fetch weather data. Check your API key or city name.")
 
 
            
+
 
 
 
