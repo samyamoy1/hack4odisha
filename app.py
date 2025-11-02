@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 import json
 
 # -------------------- Gemini API Setup --------------------
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # 🔑 Replace this
+GEMINI_API_KEY = "AIzaSyB7zaBH4aRkIsB4mt3iHvsfELvwI1Eh-xQ"  # 🔑 Replace this
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ✅ Create model once (not inside function)
@@ -179,6 +179,7 @@ if submitted:
                 st.altair_chart(aqi_chart, use_container_width=True)
 
             st.markdown("**AQI Legend:** 🟢 Good | 🟡 Moderate | 🟠 Unhealthy (Sensitive) | 🔴 Unhealthy | 🟣 Very Unhealthy | ⚫ Hazardous")
+
 
 
 
