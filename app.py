@@ -16,7 +16,7 @@ GEMINI_API_KEY = "AIzaSyB7zaBH4aRkIsB4mt3iHvsfELvwI1Eh-xQ"  # 🔑 Replace this
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ✅ Create model once (not inside function)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("models/gemini-1.5-flash")
 
 # -------------------- Generate synthetic data --------------------
 np.random.seed(42)
@@ -179,6 +179,7 @@ if submitted:
                 st.altair_chart(aqi_chart, use_container_width=True)
 
             st.markdown("**AQI Legend:** 🟢 Good | 🟡 Moderate | 🟠 Unhealthy (Sensitive) | 🔴 Unhealthy | 🟣 Very Unhealthy | ⚫ Hazardous")
+
 
 
 
