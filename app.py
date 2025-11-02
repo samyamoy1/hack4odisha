@@ -11,9 +11,14 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestClassifier
 import json
 
-GEMINI_API_KEY = "AIzaSyB7zaBH4aRkIsB4mt3iHvsfELvwI1Eh-xQ"
+# -------------------- Gemini API Setup --------------------
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # 🔑 Replace this
 genai.configure(api_key=GEMINI_API_KEY)
 
+# ✅ Create model once (not inside function)
+model = genai.GenerativeModel("gemini-1.5-flash")
+
+# -------------------- Generate synthetic data --------------------
 np.random.seed(42)
 days, hours_per_day = 30, 24
 total_rows = days * hours_per_day
@@ -24,13 +29,13 @@ dates = [d.strftime("%Y-%m-%d %H:%M:%S") for d in dates]
 temp = np.random.normal(30, 3, total_rows)
 humidity = np.random.normal(80, 5, total_rows)
 wind = np.random.normal(10, 2, total_rows)
-rain_mm = np.random.choice([0,0.5,1,2,5,10], total_rows, p=[0.5,0.2,0.1,0.1,0.05,0.05])
+rain_mm = np.random.choice([0, 0.5, 1, 2, 5, 10], total_rows, p=[0.5, 0.2, 0.1, 0.1, 0.05, 0.05])
 
 aqi = []
 for t, h, w, r in zip(temp, humidity, wind, rain_mm):
-    base = 50 + (t-25)*2 + (h-70)*0.5 - w*1.5 + r*2
-    noise = np.random.normal(0,10)
-    aqi.append(min(max(int(base+noise),10),300))
+    base = 50 + (t - 25) * 2 + (h - 70) * 0.5 - w * 1.5 + r * 2
+    noise = np.random.normal(0, 10)
+    aqi.append(min(max(int(base + noise), 10), 300))
 
 df = pd.DataFrame({
     "date": dates,
@@ -45,10 +50,10 @@ df['aqi_category'] = df['aqi'].apply(lambda x: 0 if x <= 100 else (1 if x <= 200
 
 # -------------------- Train ML models --------------------
 temp_model = LinearRegression()
-temp_model.fit(df[['day','humidity','wind','rain_mm']], df['temp'])
+temp_model.fit(df[['day', 'humidity', 'wind', 'rain_mm']], df['temp'])
 
 aqi_model = RandomForestClassifier(n_estimators=200, random_state=42)
-aqi_model.fit(df[['temp','humidity','wind']], df['aqi_category'])
+aqi_model.fit(df[['temp', 'humidity', 'wind']], df['aqi_category'])
 
 # -------------------- Helper functions --------------------
 def get_air_quality_category(aqi_value):
@@ -62,28 +67,26 @@ def get_air_quality_category(aqi_value):
 def activity_advice(temp, rain_mm, aqi_value, activity):
     advice = []
     if activity != "None":
-        if rain_mm>1: advice.append("🌂 Carry umbrella, might rain.")
-        if temp<18: advice.append("🧥 Wear warm clothes.")
-        if temp>32: advice.append("🧢 Stay hydrated & wear light clothes.")
-        if aqi_value>150: advice.append("😷 High pollution, limit outdoor activity.")
-        if activity in ["Jogging","Cycling","Walking"]:
-            if rain_mm>1: advice.append("⚠️ Be careful on wet surfaces.")
-            if temp<10: advice.append("❄️ Consider shorter duration.")
+        if rain_mm > 1: advice.append("🌂 Carry umbrella, might rain.")
+        if temp < 18: advice.append("🧥 Wear warm clothes.")
+        if temp > 32: advice.append("🧢 Stay hydrated & wear light clothes.")
+        if aqi_value > 150: advice.append("😷 High pollution, limit outdoor activity.")
+        if activity in ["Jogging", "Cycling", "Walking"]:
+            if rain_mm > 1: advice.append("⚠️ Be careful on wet surfaces.")
+            if temp < 10: advice.append("❄️ Consider shorter duration.")
     if not advice: advice.append("✅ Weather looks good for your activity!")
     return " ".join(advice)
 
 def fetch_weather_from_gemini(city):
-    model = genai.GenerativeModel("gemini-1.5-flash")
     prompt = f"""
-    Give me the current weather in {city}, including:
-    temperature (°C), humidity (%), wind_speed (km/h), and rain_probability (%).
-    Return only a JSON like this:
+    Give me the current weather for {city} in India in JSON format with:
     {{
-      "temp": 30.2,
-      "humidity": 75,
-      "wind": 8,
-      "rain_probability": 40
+      "temp": <temperature in °C>,
+      "humidity": <humidity in %>,
+      "wind": <wind speed in km/h>,
+      "rain_probability": <chance of rain in %>
     }}
+    Respond with JSON only.
     """
     response = model.generate_content(prompt)
     text = response.text.strip()
@@ -112,27 +115,24 @@ if submitted:
         today_wind = weather_data["wind"]
         rain_prob = weather_data["rain_probability"]
 
-        # Predict AQI based on weather
         today_aqi_cat = aqi_model.predict([[today_temp, today_humidity, today_wind]])[0]
         today_aqi_value = [80,150,250][today_aqi_cat]
         category, badge = get_air_quality_category(today_aqi_value)
 
         tab1, tab2, tab3 = st.tabs(["📍 Today", "📅 Tomorrow (ML)", "📈 5-Day Forecast"])
 
-        # Today
         with tab1:
             st.info(f"🌡 Temp: {today_temp}°C | 💧 Humidity: {today_humidity}% | 🌬 Wind: {today_wind} km/h")
             st.success(f"🌍 AQI: {badge} {category} — {today_aqi_value}/500")
             st.progress(int(rain_prob))
             st.caption(f"🌧 Rain Probability: {rain_prob}%")
 
-        # Tomorrow (ML)
         tomorrow_day = pd.Timestamp.now().day + 1
         predicted_rain_mm = df['rain_mm'].mean()
-        tomorrow_features = pd.DataFrame([[tomorrow_day, today_humidity, today_wind, predicted_rain_mm]], 
+        tomorrow_features = pd.DataFrame([[tomorrow_day, today_humidity, today_wind, predicted_rain_mm]],
                                          columns=['day','humidity','wind','rain_mm'])
         predicted_temp = temp_model.predict(tomorrow_features)[0]
-        aqi_features = pd.DataFrame([[predicted_temp, today_humidity, today_wind]], 
+        aqi_features = pd.DataFrame([[predicted_temp, today_humidity, today_wind]],
                                     columns=['temp','humidity','wind'])
         predicted_aqi_cat = aqi_model.predict(aqi_features)[0]
         predicted_aqi_value = [80,150,250][predicted_aqi_cat]
@@ -144,7 +144,6 @@ if submitted:
             st.warning(f"🌧 Predicted Rain: {predicted_rain_mm:.1f} mm")
             st.info(activity_advice(predicted_temp, predicted_rain_mm, predicted_aqi_value, activity))
 
-        # 5-Day Forecast
         forecast_days = 5
         forecast_dates = [datetime.date.today() + datetime.timedelta(days=i) for i in range(1, forecast_days+1)]
         forecast_temps, forecast_aqi = [], []
@@ -153,13 +152,12 @@ if submitted:
             hum = today_humidity + np.random.normal(0, 2)
             w = today_wind + np.random.normal(0, 1)
             rain = predicted_rain_mm + np.random.normal(0, 0.5)
-
             features = pd.DataFrame([[d.day, hum, w, rain]], columns=['day','humidity','wind','rain_mm'])
-            temp_pred = temp_model.predict(features)[0] + np.random.normal(0,1)
+            temp_pred = temp_model.predict(features)[0] + np.random.normal(0, 1)
             forecast_temps.append(temp_pred)
 
             aqi_cat = aqi_model.predict(pd.DataFrame([[temp_pred, hum, w]], columns=['temp','humidity','wind']))[0]
-            aqi_pred = [80,150,250][aqi_cat] + np.random.randint(-10,10)
+            aqi_pred = [80,150,250][aqi_cat] + np.random.randint(-10, 10)
             forecast_aqi.append(max(0, aqi_pred))
 
         forecast_df = pd.DataFrame({"Date": forecast_dates, "Temp": forecast_temps, "AQI": forecast_aqi})
@@ -181,10 +179,6 @@ if submitted:
                 st.altair_chart(aqi_chart, use_container_width=True)
 
             st.markdown("**AQI Legend:** 🟢 Good | 🟡 Moderate | 🟠 Unhealthy (Sensitive) | 🔴 Unhealthy | 🟣 Very Unhealthy | ⚫ Hazardous")
-
-           
-
-
 
 
 
